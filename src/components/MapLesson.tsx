@@ -3,6 +3,7 @@ import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free";
 import * as turf from "@turf/turf";
 import { SAMPLE_PROPERTY } from "@/lib/sample-property";
+import { Leaf, MapPin, Target } from "lucide-react";
 
 export type MapMode = "polygon" | "point" | "line" | "buffer";
 export type Tolerance = "easy" | "normal" | "strict";
@@ -23,11 +24,11 @@ const TOL_KEY = "canarinho:map:tolerance";
 // Thresholds tuned per mode. Higher = more forgiving.
 const THRESHOLDS: Record<
   Tolerance,
-  { iouOk: number; iouClose: number; pointMeters: number; lineRatio: number; bufferIou: number; label: string; emoji: string }
+  { iouOk: number; iouClose: number; pointMeters: number; lineRatio: number; bufferIou: number; label: string; icon: React.ReactNode }
 > = {
-  easy:   { iouOk: 0.55, iouClose: 0.25, pointMeters: 70, lineRatio: 0.55, bufferIou: 0.45, label: "Fácil",   emoji: "🌱" },
-  normal: { iouOk: 0.70, iouClose: 0.40, pointMeters: 40, lineRatio: 0.70, bufferIou: 0.60, label: "Normal",  emoji: "🌾" },
-  strict: { iouOk: 0.85, iouClose: 0.60, pointMeters: 20, lineRatio: 0.85, bufferIou: 0.75, label: "Rigoroso", emoji: "🎯" },
+  easy:   { iouOk: 0.55, iouClose: 0.25, pointMeters: 70, lineRatio: 0.55, bufferIou: 0.45, label: "Fácil",   icon: <Leaf className="h-3 w-3" /> },
+  normal: { iouOk: 0.70, iouClose: 0.40, pointMeters: 40, lineRatio: 0.70, bufferIou: 0.60, label: "Normal",  icon: <MapPin className="h-3 w-3" /> },
+  strict: { iouOk: 0.85, iouClose: 0.60, pointMeters: 20, lineRatio: 0.85, bufferIou: 0.75, label: "Rigoroso", icon: <Target className="h-3 w-3" /> },
 };
 
 export default function MapLesson({
@@ -200,7 +201,7 @@ export default function MapLesson({
     const layer = drawLayerRef.current;
     hintLayerRef.current?.clearLayers();
     if (!layer || layer.getLayers().length === 0) {
-      const r = { ok: false, msg: "Desenhe no mapa primeiro 🌱" };
+      const r = { ok: false, msg: "Desenhe no mapa primeiro." };
       setFeedback(r); onResult(false, r.msg); return;
     }
     const t = THRESHOLDS[tolerance];
@@ -235,14 +236,14 @@ export default function MapLesson({
             const missing = turf.difference(turf.featureCollection([gab, usr]));
             if (missing) {
               showDiffPolygon(missing as any, "#ef4444", "Faltou cobrir esta parte");
-              hints.push("🔴 Vermelho: áreas do imóvel que ficaram de fora.");
+              hints.push("Vermelho: áreas do imóvel que ficaram de fora.");
             }
           } catch { /* ignore */ }
           try {
             const extra = turf.difference(turf.featureCollection([usr, gab]));
             if (extra) {
               showDiffPolygon(extra as any, "#f59e0b", "Você incluiu além do limite");
-              hints.push("🟠 Laranja: áreas que você incluiu além da cerca.");
+              hints.push("Laranja: áreas que você incluiu além da cerca.");
             }
           } catch { /* ignore */ }
           if (areaUsr > areaGab * 1.15) hints.push(`Sua área (${areaUsr.toFixed(1)} ha) é maior que o esperado (${areaGab.toFixed(1)} ha).`);
@@ -260,7 +261,7 @@ export default function MapLesson({
       } else {
         msg = `Está a ${dist.toFixed(0)} m — precisa ficar a até ${t.pointMeters} m.`;
         showPointHint([glng, glat], [lng, lat]);
-        hints.push("🟡 Marcador amarelo: posição correta. Linha tracejada mostra o quanto mover.");
+        hints.push("Marcador amarelo: posição correta. Linha tracejada mostra o quanto mover.");
       }
     } else if (mode === "line") {
       const gabCoords = gabarito as [number, number][];
@@ -275,7 +276,7 @@ export default function MapLesson({
       } else {
         msg = `Comprimento fora: ${len.toFixed(0)} m vs ${gabLen.toFixed(0)} m esperados.`;
         showLineHint(gabCoords);
-        hints.push("🟡 Linha tracejada: traçado esperado. Siga a estrada na imagem.");
+        hints.push("Linha tracejada: traçado esperado. Siga a estrada na imagem.");
       }
     } else if (mode === "buffer" && baseLine) {
       const line = turf.lineString(baseLine);
@@ -295,7 +296,7 @@ export default function MapLesson({
             style: { color: "#ffb020", weight: 2, dashArray: "6 4", fillColor: "#ffb020", fillOpacity: 0.2 },
           }).bindTooltip(`APP de ${bufferMeters} m`);
           hintLayerRef.current?.addLayer(autoLayer);
-          hints.push("🟡 Faixa amarela: APP esperada ao redor do rio.");
+          hints.push("Faixa amarela: APP esperada ao redor do rio.");
         }
       }
     }
@@ -335,7 +336,7 @@ export default function MapLesson({
                 color: active ? "var(--color-primary-foreground)" : "var(--color-muted-foreground)",
               }}
             >
-              {THRESHOLDS[k].emoji} {THRESHOLDS[k].label}
+              <span className="flex items-center gap-1.5">{THRESHOLDS[k].icon} {THRESHOLDS[k].label}</span>
             </button>
           );
         })}

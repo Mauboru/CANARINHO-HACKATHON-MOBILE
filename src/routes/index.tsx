@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { lazy, Suspense, useMemo, useState } from "react";
+import React, { lazy, Suspense, useMemo, useState, useEffect } from "react";
+import { Leaf, Map, User, FileText, Trophy, MapPin, Lock, Key, BookOpen, Globe } from "lucide-react";
 import canarinho from "@/assets/canarinho.png";
 import canarinhoCelebrate from "@/assets/canarinho-celebrate.png";
 import { SAMPLE_PROPERTY } from "@/lib/sample-property";
@@ -50,7 +51,7 @@ interface Unit {
   lessons: Lesson[];
 }
 
-const UNITS: Unit[] = [
+const DEFAULT_UNITS: Unit[] = [
   {
     id: "u1",
     number: 1,
@@ -58,10 +59,10 @@ const UNITS: Unit[] = [
     subtitle: "Documentos, login Gov.br e instalação do SICAR",
     color: "primary",
     lessons: [
-      { id: "l1", title: "O que é o CAR?", status: "done", kind: "lesson" },
-      { id: "l2", title: "Documentos da propriedade", status: "done", kind: "lesson" },
-      { id: "l3", title: "Login no Gov.br", status: "done", kind: "practice" },
-      { id: "l4", title: "Checkpoint da Unidade 1", status: "current", kind: "checkpoint" },
+      { id: "l1", title: "O que é o CAR?", status: "current", kind: "lesson" },
+      { id: "l2", title: "Documentos da propriedade", status: "locked", kind: "lesson" },
+      { id: "l3", title: "Login no Gov.br", status: "locked", kind: "practice" },
+      { id: "l4", title: "Checkpoint da Unidade 1", status: "locked", kind: "checkpoint" },
       { id: "l5", title: "Instalar o SICAR", status: "locked", kind: "lesson" },
     ],
   },
@@ -75,7 +76,7 @@ const UNITS: Unit[] = [
       {
         id: "l6",
         title: "Perímetro do imóvel",
-        status: "current",
+        status: "locked",
         kind: "map",
         map: {
           mode: "polygon",
@@ -86,7 +87,7 @@ const UNITS: Unit[] = [
       {
         id: "l7",
         title: "Marcando a sede",
-        status: "current",
+        status: "locked",
         kind: "map",
         map: {
           mode: "point",
@@ -146,6 +147,55 @@ const UNITS: Unit[] = [
   },
 ];
 
+function useUnits() {
+  const [units, setUnits] = useState<Unit[]>(DEFAULT_UNITS);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const saved = localStorage.getItem("canarinho_units");
+      if (saved) {
+        setUnits(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error("Error reading units from localStorage", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      localStorage.setItem("canarinho_units", JSON.stringify(units));
+    }
+  }, [units, mounted]);
+
+  const completeLesson = (lessonId: string) => {
+    setUnits((prev) => {
+      const newUnits = structuredClone(prev);
+      let found = false;
+      let nextLessonFound = false;
+
+      for (const unit of newUnits) {
+        for (let i = 0; i < unit.lessons.length; i++) {
+          const l = unit.lessons[i];
+          if (l.id === lessonId) {
+            l.status = "done";
+            found = true;
+          } else if (found && !nextLessonFound) {
+            if (l.status === "locked" || l.status === "current") {
+              l.status = "current";
+              nextLessonFound = true;
+            }
+          }
+        }
+      }
+      return newUnits;
+    });
+  };
+
+  return { units, completeLesson, setUnits };
+}
+
 /* ---------- Helpers ---------- */
 
 function unitToken(color: Unit["color"]) {
@@ -181,41 +231,20 @@ function HUD() {
     <div className="sticky top-0 z-30 border-b border-border/60 bg-background/85 px-5 py-3 backdrop-blur">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 shadow-[0_2px_0_0_var(--color-border)]">
-          <span className="text-lg">🇧🇷</span>
+          <Globe className="h-4 w-4" />
           <span className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">PT-BR</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Pill icon="🔥" value="7" color="streak" />
-          <Pill icon="🌽" value="240" color="accent" />
-          <Pill icon="❤" value="4" color="heart" />
         </div>
       </div>
     </div>
   );
 }
 
-function Pill({ icon, value, color }: { icon: string; value: string; color: "streak" | "accent" | "heart" }) {
-  const cls =
-    color === "streak"
-      ? "text-streak"
-      : color === "accent"
-        ? "text-accent-shadow"
-        : "text-heart";
-  return (
-    <div className="flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 shadow-[0_2px_0_0_var(--color-border)]">
-      <span className={`text-base leading-none ${cls}`}>{icon}</span>
-      <span className="text-sm font-extrabold tabular-nums text-foreground">{value}</span>
-    </div>
-  );
-}
-
-/* ---------- Unit banner ---------- */
-
-function UnitBanner({ unit }: { unit: Unit }) {
+function UnitBanner({ unit, expanded, onToggle }: { unit: Unit; expanded?: boolean; onToggle?: () => void }) {
   const t = unitToken(unit.color);
   return (
     <div
-      className={`relative mt-6 overflow-hidden rounded-2xl ${t.banner} px-5 py-4 shadow-[0_4px_0_0_var(--color-primary-shadow)]`}
+      onClick={onToggle}
+      className={`relative mt-6 cursor-pointer overflow-hidden rounded-2xl ${t.banner} px-5 py-4 shadow-[0_4px_0_0_var(--color-primary-shadow)] transition-transform active:scale-[0.99]`}
       style={
         unit.color === "accent"
           ? { boxShadow: "0 4px 0 0 var(--color-accent-shadow)" }
@@ -232,25 +261,60 @@ function UnitBanner({ unit }: { unit: Unit }) {
           <h2 className="mt-0.5 truncate text-lg font-black">{unit.title.split("·")[1]?.trim()}</h2>
           <p className="text-xs font-bold opacity-85">{unit.subtitle}</p>
         </div>
-        <button
-          className={`shrink-0 rounded-xl border-2 border-white/30 ${t.text} px-3 py-2 text-[0.7rem] font-black uppercase tracking-wider hover:bg-white/10`}
+        <div
+          className={`shrink-0 rounded-xl border-2 border-white/30 ${t.text} px-3 py-2 text-[0.7rem] font-black uppercase tracking-wider transition hover:bg-white/10`}
         >
-          Guia
-        </button>
+          {expanded ? "Ocultar" : "Mostrar"}
+        </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- Unit Section Wrapper ---------- */
+
+function UnitSection({ unit, ui, onPick }: { unit: Unit; ui: number; onPick: (l: Lesson) => void }) {
+  // O estado padrão é expandido. Podemos mudar para falso se preferir que inicie comprimido.
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <section>
+      <UnitBanner unit={unit} expanded={expanded} onToggle={() => setExpanded(!expanded)} />
+      {expanded && (
+        <div className="relative mt-6 flex flex-col items-center gap-7 pb-2 animate-in fade-in slide-in-from-top-4 duration-300">
+          {unit.lessons.map((lesson, i) => {
+            // zig-zag offsets
+            const pattern = [0, 60, 80, 30, -40, -70, -30];
+            const offset = pattern[i % pattern.length];
+            return (
+              <LessonNode
+                key={lesson.id}
+                lesson={lesson}
+                unit={unit}
+                offset={offset}
+                onPick={onPick}
+                active={lesson.status === "current"}
+              />
+            );
+          })}
+        </div>
+      )}
+      {ui === 0 && expanded && (
+        <MascotTip text="Quando travar no SICAR, eu te mostro a tela exata pra clicar. Bora?" />
+      )}
+    </section>
   );
 }
 
 /* ---------- Lesson node (the round Duolingo button) ---------- */
 
 function lessonIcon(kind: LessonKind, status: LessonStatus) {
-  if (status === "locked") return "🔒";
-  if (kind === "checkpoint") return "🗝";
-  if (kind === "trophy") return "🏆";
-  if (kind === "practice") return "📍";
-  if (kind === "map") return "🗺";
-  return "📘";
+  if (status === "locked") return <Lock className="h-8 w-8" />;
+  if (kind === "checkpoint") return <Key className="h-8 w-8" />;
+  if (kind === "trophy") return <Trophy className="h-8 w-8" />;
+  if (kind === "practice") return <MapPin className="h-8 w-8" />;
+  if (kind === "map") return <Map className="h-8 w-8" />;
+  return <BookOpen className="h-8 w-8" />;
 }
 
 function LessonNode({
@@ -305,7 +369,7 @@ function LessonNode({
         {active && (
           <span className="pointer-events-none absolute inset-0 -m-2 animate-ping rounded-full border-4 border-accent opacity-40" />
         )}
-        <span className="text-3xl drop-shadow-sm">{lessonIcon(lesson.kind, lesson.status)}</span>
+        <span className="drop-shadow-sm">{lessonIcon(lesson.kind, lesson.status)}</span>
         {isDone && (
           <span className="absolute -bottom-1 -right-1 grid h-7 w-7 place-items-center rounded-full border-4 border-background bg-primary text-xs font-black text-white">
             ✓
@@ -347,16 +411,46 @@ function MascotTip({ text }: { text: string }) {
 /* ---------- Bottom nav ---------- */
 
 const NAV = [
-  { id: "trail", icon: "🌱", label: "Trilha" },
-  { id: "sicar", icon: "🗺", label: "SICAR" },
-  { id: "shop", icon: "🛒", label: "Loja" },
-  { id: "profile", icon: "👤", label: "Perfil" },
+  { id: "trail", icon: <Leaf className="h-6 w-6" />, label: "Trilha" },
+  { id: "sicar", icon: <Map className="h-6 w-6" />, label: "SICAR" },
+  { id: "profile", icon: <User className="h-6 w-6" />, label: "Perfil" },
 ];
+
+function SidebarNav({ tab, onTab }: { tab: string; onTab: (v: string) => void }) {
+  return (
+    <nav className="hidden md:flex w-64 shrink-0 flex-col border-r-2 border-border bg-white px-4 py-8">
+      <div className="mb-8 px-2 flex items-center gap-3">
+        <Leaf className="h-8 w-8 text-primary" />
+        <h2 className="text-2xl font-black tracking-tight text-primary">Canarinho</h2>
+      </div>
+      <ul className="flex flex-col gap-2">
+        {NAV.map((n) => {
+          const active = tab === n.id;
+          return (
+            <li key={n.id}>
+              <button
+                onClick={() => onTab(n.id)}
+                className={`flex w-full items-center gap-4 rounded-2xl px-4 py-3.5 text-sm font-black uppercase tracking-wider transition ${
+                  active
+                    ? "bg-primary/10 text-primary border-2 border-primary/20"
+                    : "text-muted-foreground hover:bg-muted hover:text-muted-foreground border-2 border-transparent grayscale opacity-70 hover:grayscale-0 hover:opacity-100"
+                }`}
+              >
+                {n.icon}
+                {n.label}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+}
 
 function BottomNav({ tab, onTab }: { tab: string; onTab: (v: string) => void }) {
   return (
-    <nav className="sticky bottom-0 z-30 border-t-2 border-border bg-background/95 px-2 py-2 backdrop-blur">
-      <ul className="grid grid-cols-4 gap-1">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-border bg-background/95 px-2 py-2 backdrop-blur md:hidden">
+      <ul className="grid grid-cols-3 gap-1">
         {NAV.map((n) => {
           const active = tab === n.id;
           return (
@@ -366,10 +460,10 @@ function BottomNav({ tab, onTab }: { tab: string; onTab: (v: string) => void }) 
                 className={`flex w-full flex-col items-center gap-0.5 rounded-xl px-2 py-2 text-[0.68rem] font-black uppercase tracking-wider transition ${
                   active
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground hover:text-muted-foreground grayscale opacity-70 hover:grayscale-0 hover:opacity-100"
                 }`}
               >
-                <span className="text-xl leading-none">{n.icon}</span>
+                {n.icon}
                 {n.label}
               </button>
             </li>
@@ -377,6 +471,105 @@ function BottomNav({ tab, onTab }: { tab: string; onTab: (v: string) => void }) 
         })}
       </ul>
     </nav>
+  );
+}
+
+/* ---------- Content Tabs ---------- */
+
+function SicarTab() {
+  return (
+    <div className="flex flex-col gap-6 pt-4 animate-in fade-in slide-in-from-bottom-4">
+      <div>
+        <h2 className="text-2xl font-black">Resumo do CAR</h2>
+        <p className="text-sm font-bold text-muted-foreground">Sítio Boa Vista</p>
+      </div>
+
+      <div className="rounded-2xl border-2 border-border bg-white p-5 shadow-[0_4px_0_0_var(--color-border)]">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <FileText className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Status atual</p>
+            <p className="text-lg font-black text-foreground">Em Preenchimento</p>
+          </div>
+        </div>
+        <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-[45%] rounded-full bg-primary" />
+        </div>
+        <p className="mt-2 text-right text-xs font-bold text-muted-foreground">45% concluído</p>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border-2 border-border bg-white shadow-[0_4px_0_0_var(--color-border)]">
+        <div className="flex items-center justify-between border-b-2 border-border bg-muted px-4 py-3">
+          <p className="text-sm font-black uppercase tracking-widest text-foreground">Mapa da Propriedade</p>
+          <span className="rounded bg-accent/20 px-2 py-1 text-xs font-bold text-accent">Polígono</span>
+        </div>
+        <div className="relative grid h-48 place-items-center bg-[oklch(0.97_0.02_120)]">
+          <p className="text-sm font-bold text-muted-foreground">Abra a Trilha para desenhar no mapa.</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)]">
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Área Total</p>
+          <p className="mt-1 text-xl font-black">12.5 ha</p>
+        </div>
+        <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)]">
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Reserva Legal</p>
+          <p className="mt-1 text-xl font-black">2.5 ha</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileTab() {
+  return (
+    <div className="flex flex-col gap-6 pt-4 animate-in fade-in slide-in-from-bottom-4">
+      <div className="flex flex-col items-center border-b-2 border-border pb-6 pt-4">
+        <div className="grid h-24 w-24 place-items-center rounded-full border-4 border-primary bg-primary/5 text-4xl shadow-[0_4px_0_0_var(--color-primary-shadow)] text-primary">
+          <User className="h-10 w-10" />
+        </div>
+        <h2 className="mt-4 text-2xl font-black">Seção do Usuário</h2>
+        <p className="text-sm font-bold text-muted-foreground">Seu João · Entrou em Maio/2026</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)]">
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Lições Concluídas</p>
+          <p className="mt-1 text-2xl font-black text-primary">3</p>
+        </div>
+        <div className="rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)]">
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Dias de Foco</p>
+          <p className="mt-1 text-2xl font-black text-orange-500">2</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-4 text-lg font-black">Conquistas</h3>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-4 rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)]">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-yellow-100">
+              <Trophy className="h-6 w-6 text-yellow-600" />
+            </div>
+            <div>
+              <p className="font-black text-foreground">Primeiro Passo</p>
+              <p className="text-xs font-bold text-muted-foreground">Completou a primeira lição do CAR.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 rounded-2xl border-2 border-border bg-white p-4 shadow-[0_4px_0_0_var(--color-border)] opacity-60">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gray-100">
+              <Map className="h-6 w-6 text-gray-500" />
+            </div>
+            <div>
+              <p className="font-black text-foreground">Mestre do Mapa</p>
+              <p className="text-xs font-bold text-muted-foreground">Desenhe todas as áreas exigidas.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -391,18 +584,27 @@ const QUESTIONS: Record<string, { prompt: string; sicarHint: string; options: st
   },
 };
 
-function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void }) {
+function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose: () => void; onComplete: () => void }) {
   const q = QUESTIONS.default;
   const [picked, setPicked] = useState<number | null>(null);
   const [checked, setChecked] = useState(false);
   const [mapDone, setMapDone] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Bloqueia o scroll do fundo enquanto o modal está aberto (client-side only)
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const isMap = lesson.kind === "map" && lesson.map;
   const correct = isMap ? !!mapDone?.ok : checked && picked === q.correct;
 
   if (isMap && lesson.map) {
     return (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center">
-        <div className="w-full max-w-md overflow-hidden rounded-t-3xl bg-background sm:rounded-3xl">
+        <div className="w-full max-w-md md:max-w-3xl overflow-hidden rounded-t-3xl bg-background sm:rounded-3xl">
           <div className="flex items-center gap-3 px-5 py-4">
             <button onClick={onClose} aria-label="Fechar" className="text-2xl font-black text-muted-foreground">
               ×
@@ -413,7 +615,6 @@ function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void 
                 style={{ width: mapDone?.ok ? "100%" : "40%" }}
               />
             </div>
-            <span className="text-sm">❤ <b>4</b></span>
           </div>
           <div className="px-5 pb-2">
             <p className="text-[0.7rem] font-black uppercase tracking-widest text-muted-foreground">
@@ -441,26 +642,40 @@ function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void 
             </Suspense>
           </div>
           {mapDone && (
-            <div className={`flex items-center gap-3 px-5 py-4 ${mapDone.ok ? "bg-primary/10" : "bg-heart/10"}`}>
-              <img
-                src={mapDone.ok ? canarinhoCelebrate : canarinho}
-                alt=""
-                width={56}
-                height={56}
-                className="h-14 w-14"
-              />
-              <p className={`flex-1 text-sm font-black ${mapDone.ok ? "text-primary" : "text-heart"}`}>
-                {mapDone.msg}
-              </p>
-              {mapDone.ok && (
-                <button
-                  onClick={onClose}
-                  className="rounded-xl bg-primary px-4 py-2 text-sm font-black uppercase text-primary-foreground"
-                  style={{ boxShadow: "0 4px 0 0 var(--color-primary-shadow)" }}
-                >
-                  Continuar
-                </button>
-              )}
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
+              <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <img
+                    src={mapDone.ok ? canarinhoCelebrate : canarinho}
+                    alt=""
+                    width={80}
+                    height={80}
+                    className="h-20 w-20"
+                  />
+                  <div>
+                    <p className={`text-xl font-black ${mapDone.ok ? "text-primary" : "text-heart"}`}>
+                      {mapDone.msg}
+                    </p>
+                  </div>
+                  {mapDone.ok ? (
+                    <button
+                      onClick={onComplete}
+                      className="mt-2 w-full rounded-2xl bg-primary py-3.5 text-lg font-black uppercase tracking-wider text-primary-foreground active:scale-[0.98] transition-transform"
+                      style={{ boxShadow: "0 4px 0 0 var(--color-primary-shadow)" }}
+                    >
+                      Continuar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setMapDone(null)}
+                      className="mt-2 w-full rounded-2xl bg-heart py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform"
+                      style={{ boxShadow: "0 4px 0 0 #ea2b2b" }}
+                    >
+                      Tentar Novamente
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -468,20 +683,21 @@ function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void 
     );
   }
 
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/40 sm:items-center">
-      <div className="w-full max-w-md overflow-hidden rounded-t-3xl bg-background sm:rounded-3xl">
+    <div className="fixed inset-0 z-50 flex flex-col items-stretch justify-end bg-foreground/40 sm:items-center sm:justify-center">
+      <div className="flex w-full flex-col sm:max-w-md sm:max-h-[90vh] h-[92vh] sm:h-auto rounded-t-3xl sm:rounded-3xl bg-background overflow-hidden">
         {/* Header progress */}
-        <div className="flex items-center gap-3 px-5 py-4">
-          <button onClick={onClose} aria-label="Fechar" className="text-2xl font-black text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/40 px-5 py-4">
+          <button onClick={onClose} aria-label="Fechar" className="text-2xl font-black text-muted-foreground leading-none">
             ×
           </button>
           <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted">
             <div className="h-full w-2/5 rounded-full bg-primary" />
           </div>
-          <span className="text-sm">❤ <b>4</b></span>
         </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
 
         {/* Mock SICAR screenshot panel */}
         <div className="mx-5 overflow-hidden rounded-2xl border-2 border-border bg-white shadow-[0_3px_0_0_var(--color-border)]">
@@ -542,57 +758,72 @@ function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void 
               </button>
             );
           })}
+          </div>
+        </div>
+        {/* End scrollable content */}
+
+        {/* Sticky action area */}
+        <div className="shrink-0 border-t border-border/40 bg-background px-5 py-4">
+          <button
+            onClick={() => picked !== null && setChecked(true)}
+            disabled={picked === null || checked}
+            className={`w-full rounded-xl py-3.5 text-sm font-black uppercase tracking-wider transition ${
+              picked === null
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                : "bg-primary text-primary-foreground active:translate-y-0.5"
+            }`}
+            style={{
+              boxShadow: picked === null ? "none" : "0 4px 0 0 var(--color-primary-shadow)",
+            }}
+          >
+            Verificar
+          </button>
         </div>
 
-        {/* Feedback bar */}
-        <div
-          className={`px-5 py-4 transition ${
-            checked ? (correct ? "bg-primary/10" : "bg-heart/10") : "bg-muted/50"
-          }`}
-        >
-          {checked ? (
-            <div className="flex items-center gap-3">
-              <img
-                src={correct ? canarinhoCelebrate : canarinho}
-                alt=""
-                width={56}
-                height={56}
-                loading="lazy"
-                className="h-14 w-14"
-              />
-              <div className="flex-1">
-                <p className={`text-sm font-black ${correct ? "text-primary" : "text-heart"}`}>
-                  {correct ? "Boa! Resposta certa." : "Quase! No SICAR, é Cadastrar > Imóvel Rural."}
-                </p>
-                <p className="text-xs font-bold text-muted-foreground">
-                  Dica: é por essa aba que você inicia todo o desenho do imóvel.
-                </p>
+        {/* Centered Feedback Modal */}
+        {checked && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <img
+                  src={correct ? canarinhoCelebrate : canarinho}
+                  alt=""
+                  width={80}
+                  height={80}
+                  className="h-20 w-20 drop-shadow-sm"
+                />
+                <div>
+                  <p className={`text-2xl font-black ${correct ? "text-primary" : "text-heart"}`}>
+                    {correct ? "Boa! Resposta certa." : "Quase!"}
+                  </p>
+                  <p className="mt-2 text-sm font-bold text-muted-foreground">
+                    {correct
+                      ? "Você mandou bem, continue assim na trilha do CAR."
+                      : "No SICAR, é Cadastrar > Imóvel Rural. Dica: é por essa aba que você inicia todo o desenho do imóvel."}
+                  </p>
+                </div>
+                <button
+                  onClick={
+                    correct
+                      ? onComplete
+                      : () => {
+                          setChecked(false);
+                          setPicked(null);
+                        }
+                  }
+                  className={`mt-4 w-full rounded-2xl py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform ${
+                    correct ? "bg-primary" : "bg-heart"
+                  }`}
+                  style={{
+                    boxShadow: `0 4px 0 0 ${correct ? "var(--color-primary-shadow)" : "#ea2b2b"}`,
+                  }}
+                >
+                  {correct ? "Continuar" : "Tentar Novamente"}
+                </button>
               </div>
-              <button
-                onClick={onClose}
-                className="rounded-xl bg-primary px-4 py-2 text-sm font-black uppercase text-primary-foreground"
-                style={{ boxShadow: "0 4px 0 0 var(--color-primary-shadow)" }}
-              >
-                Continuar
-              </button>
             </div>
-          ) : (
-            <button
-              onClick={() => picked !== null && setChecked(true)}
-              disabled={picked === null}
-              className={`w-full rounded-xl py-3 text-sm font-black uppercase tracking-wider transition ${
-                picked === null
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-primary text-primary-foreground active:translate-y-0.5"
-              }`}
-              style={{
-                boxShadow: picked === null ? "none" : "0 4px 0 0 var(--color-primary-shadow)",
-              }}
-            >
-              Verificar
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -603,29 +834,37 @@ function LessonSheet({ lesson, onClose }: { lesson: Lesson; onClose: () => void 
 function App() {
   const [tab, setTab] = useState("trail");
   const [open, setOpen] = useState<Lesson | null>(null);
+  const { units, completeLesson, setUnits } = useUnits();
 
   const totalDone = useMemo(
-    () => UNITS.flatMap((u) => u.lessons).filter((l) => l.status === "done").length,
-    [],
+    () => units.flatMap((u) => u.lessons).filter((l) => l.status === "done").length,
+    [units],
   );
 
   return (
-    <div className="min-h-screen bg-[oklch(0.97_0.02_120)] py-6 sm:py-10">
-      {/* Phone frame */}
-      <div className="mx-auto flex w-full max-w-[420px] flex-col overflow-hidden rounded-[2.25rem] border-[10px] border-foreground/90 bg-background shadow-2xl">
-        <HUD />
+    <div className="min-h-screen bg-background md:bg-[oklch(0.97_0.02_120)] md:py-8">
+      {/* App Container */}
+      <div className="mx-auto flex min-h-screen w-full flex-col bg-background md:min-h-[85vh] md:max-w-5xl md:flex-row md:overflow-hidden md:rounded-3xl md:border-2 md:border-border md:shadow-2xl">
+        
+        <SidebarNav tab={tab} onTab={setTab} />
 
-        <main className="flex-1 px-5 pb-8">
-          {tab === "trail" && (
+        <div className="flex flex-1 flex-col overflow-y-auto relative">
+          <HUD />
+
+          <main className="flex-1 px-5 pb-24 lg:px-8 max-w-2xl mx-auto w-full md:pb-8">
+            {tab === "trail" && (
             <>
               <div className="mt-4 flex items-end justify-between">
                 <div>
                   <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">
                     Trilha do CAR
                   </p>
-                  <h1 className="text-2xl font-black leading-tight">
-                    Olá, Seu João! <span className="text-base">🌾</span>
-                  </h1>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-black leading-tight">
+                      Olá, Seu João!
+                    </h1>
+                    <Leaf className="h-6 w-6 text-primary" />
+                  </div>
                   <p className="mt-1 text-sm font-semibold text-muted-foreground">
                     {totalDone} de 14 lições · Sítio Boa Vista
                   </p>
@@ -639,30 +878,8 @@ function App() {
                 />
               </div>
 
-              {UNITS.map((unit, ui) => (
-                <section key={unit.id}>
-                  <UnitBanner unit={unit} />
-                  <div className="relative mt-6 flex flex-col items-center gap-7 pb-2">
-                    {unit.lessons.map((lesson, i) => {
-                      // zig-zag offsets
-                      const pattern = [0, 60, 80, 30, -40, -70, -30];
-                      const offset = pattern[i % pattern.length];
-                      return (
-                        <LessonNode
-                          key={lesson.id}
-                          lesson={lesson}
-                          unit={unit}
-                          offset={offset}
-                          onPick={setOpen}
-                          active={lesson.status === "current"}
-                        />
-                      );
-                    })}
-                  </div>
-                  {ui === 0 && (
-                    <MascotTip text="Quando travar no SICAR, eu te mostro a tela exata pra clicar. Bora?" />
-                  )}
-                </section>
+              {units.map((unit, ui) => (
+                <UnitSection key={unit.id} unit={unit} ui={ui} onPick={setOpen} />
               ))}
 
               <div className="mt-8 rounded-2xl border-2 border-border bg-white p-4 text-center shadow-[0_3px_0_0_var(--color-border)]">
@@ -676,27 +893,27 @@ function App() {
             </>
           )}
 
-          {tab !== "trail" && (
-            <div className="grid min-h-[60vh] place-items-center text-center">
-              <div>
-                <img src={canarinho} alt="" width={140} height={140} className="mx-auto h-32 w-32" />
-                <p className="mt-4 text-base font-black uppercase tracking-widest text-muted-foreground">
-                  Em breve
-                </p>
-                <p className="mt-1 text-sm font-bold">Esta área do app ainda está no ninho.</p>
-              </div>
-            </div>
-          )}
+          {tab === "sicar" && <SicarTab />}
+          {tab === "profile" && <ProfileTab />}
         </main>
 
-        <BottomNav tab={tab} onTab={setTab} />
+          <BottomNav tab={tab} onTab={setTab} />
+        </div>
       </div>
 
-      <p className="mx-auto mt-4 max-w-[420px] px-5 text-center text-xs font-bold text-muted-foreground">
+      <p className="mx-auto mt-4 hidden md:block max-w-5xl px-5 text-center text-xs font-bold text-muted-foreground">
         Protótipo · Canarinho CAR — trilha de regularização ambiental para produtores rurais
       </p>
 
-      {open && <LessonSheet lesson={open} onClose={() => setOpen(null)} />}
+      {/* Botão de reset temporário para debug */}
+      <button 
+        onClick={() => { localStorage.removeItem("canarinho_units"); window.location.reload(); }}
+        className="fixed top-4 right-4 z-50 text-[0.6rem] font-bold text-muted-foreground opacity-50 hover:opacity-100"
+      >
+        Resetar Progresso
+      </button>
+
+      {open && <LessonSheet lesson={open} onClose={() => setOpen(null)} onComplete={() => { completeLesson(open.id); setOpen(null); }} />}
     </div>
   );
 }
