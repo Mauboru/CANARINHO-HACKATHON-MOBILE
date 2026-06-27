@@ -76,7 +76,7 @@ const DEFAULT_UNITS: Unit[] = [
       {
         id: "l6",
         title: "Perímetro do imóvel",
-        status: "locked",
+        status: "current",
         kind: "map",
         map: {
           mode: "polygon",
@@ -127,7 +127,7 @@ const DEFAULT_UNITS: Unit[] = [
     subtitle: "Áreas de Preservação Permanente e RL",
     color: "primary",
     lessons: [
-      { id: "l11", title: "O que é APP?", status: "locked", kind: "lesson" },
+      { id: "l11", title: "O que é APP?", status: "current", kind: "lesson" },
       {
         id: "l12",
         title: "Mata ciliar dos rios",
@@ -642,7 +642,7 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
             </Suspense>
           </div>
           {mapDone && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
               <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
                 <div className="flex flex-col items-center gap-4 text-center">
                   <img
@@ -782,7 +782,7 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
 
         {/* Centered Feedback Modal */}
         {checked && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-foreground/60 p-5 animate-in fade-in duration-300">
             <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
               <div className="flex flex-col items-center gap-4 text-center">
                 <img

@@ -21,14 +21,13 @@ interface Props {
 const STORAGE_PREFIX = "canarinho:map:";
 const TOL_KEY = "canarinho:map:tolerance";
 
-// Thresholds tuned per mode. Higher = more forgiving.
 const THRESHOLDS: Record<
   Tolerance,
   { iouOk: number; iouClose: number; pointMeters: number; lineRatio: number; bufferIou: number; label: string; icon: React.ReactNode }
 > = {
-  easy:   { iouOk: 0.55, iouClose: 0.25, pointMeters: 70, lineRatio: 0.55, bufferIou: 0.45, label: "Fácil",   icon: <Leaf className="h-3 w-3" /> },
-  normal: { iouOk: 0.70, iouClose: 0.40, pointMeters: 40, lineRatio: 0.70, bufferIou: 0.60, label: "Normal",  icon: <MapPin className="h-3 w-3" /> },
-  strict: { iouOk: 0.85, iouClose: 0.60, pointMeters: 20, lineRatio: 0.85, bufferIou: 0.75, label: "Rigoroso", icon: <Target className="h-3 w-3" /> },
+  easy:   { iouOk: 0.45, iouClose: 0.20, pointMeters: 90, lineRatio: 0.45, bufferIou: 0.35, label: "Fácil",   icon: <Leaf className="h-3 w-3" /> },
+  normal: { iouOk: 0.60, iouClose: 0.30, pointMeters: 55, lineRatio: 0.60, bufferIou: 0.50, label: "Normal",  icon: <MapPin className="h-3 w-3" /> },
+  strict: { iouOk: 0.75, iouClose: 0.45, pointMeters: 30, lineRatio: 0.75, bufferIou: 0.65, label: "Rigoroso", icon: <Target className="h-3 w-3" /> },
 };
 
 export default function MapLesson({
@@ -120,6 +119,7 @@ export default function MapLesson({
     const clearHints = () => hintLayerRef.current?.clearLayers();
 
     const onCreate = (e: { layer: L.Layer }) => {
+      drawLayer.clearLayers(); // Remove desenhos anteriores para focar no novo
       drawLayer.addLayer(e.layer);
       setHasDrawing(true);
       clearHints();
