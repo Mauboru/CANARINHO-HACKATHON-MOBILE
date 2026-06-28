@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import React, { lazy, Suspense, useMemo, useState, useEffect } from "react";
-import { Leaf, Map, User, FileText, Trophy, MapPin, Lock, Key, BookOpen, Globe } from "lucide-react";
+import { Leaf, Map, User, FileText, Trophy, MapPin, Lock, Key, BookOpen, Globe, Sparkles } from "lucide-react";
 import canarinho from "@/assets/canarinho.png";
 import canarinhoCelebrate from "@/assets/canarinho-celebrate.png";
 import { SAMPLE_PROPERTY } from "@/lib/sample-property";
+import AssistantChat from "@/components/AssistantChat";
+import RemediationSheet from "@/components/RemediationSheet";
 
 const MapLesson = lazy(() => import("@/components/MapLesson"));
 
@@ -26,7 +28,8 @@ export const Route = createFileRoute("/")({
 /* ---------- Trail data: mirrors the SICAR flow ---------- */
 
 type LessonStatus = "done" | "current" | "locked";
-type LessonKind = "lesson" | "practice" | "checkpoint" | "trophy" | "map";
+type LessonKind = "lesson" | "practice" | "checkpoint" | "trophy" | "map" | "remediation";
+type RemediationType = "video" | "example" | "animation" | "exercise";
 type MapMode = "polygon" | "point" | "line" | "buffer";
 
 interface Lesson {
@@ -34,6 +37,8 @@ interface Lesson {
   title: string;
   status: LessonStatus;
   kind: LessonKind;
+  tag?: string;
+  remediation?: { type: RemediationType };
   map?: {
     mode: MapMode;
     instruction: string;
@@ -59,7 +64,7 @@ const DEFAULT_UNITS: Unit[] = [
     subtitle: "Documentos, login Gov.br e instalação do SICAR",
     color: "primary",
     lessons: [
-      { id: "l1", title: "O que é o CAR?", status: "current", kind: "lesson" },
+      { id: "l1", title: "O que é o CAR?", status: "current", kind: "lesson", tag: "sicar" },
       { id: "l2", title: "Documentos da propriedade", status: "locked", kind: "lesson" },
       { id: "l3", title: "Login no Gov.br", status: "locked", kind: "practice" },
       { id: "l4", title: "Checkpoint da Unidade 1", status: "locked", kind: "checkpoint" },
@@ -127,7 +132,7 @@ const DEFAULT_UNITS: Unit[] = [
     subtitle: "Áreas de Preservação Permanente e RL",
     color: "primary",
     lessons: [
-      { id: "l11", title: "O que é APP?", status: "current", kind: "lesson" },
+      { id: "l11", title: "O que é APP?", status: "current", kind: "lesson", tag: "app" },
       {
         id: "l12",
         title: "Mata ciliar dos rios",
@@ -193,7 +198,64 @@ function useUnits() {
     });
   };
 
-  return { units, completeLesson, setUnits };
+  const injectRemediation = (tag: string, afterLessonId: string) => {
+    setUnits((prev) => {
+      const newUnits = structuredClone(prev);
+      for (const unit of newUnits) {
+        const idx = unit.lessons.findIndex((l) => l.id === afterLessonId);
+        if (idx === -1) continue;
+        // Avoid double injection
+        const alreadyInjected = unit.lessons.some(
+          (l) => l.kind === "remediation" && l.tag === tag && l.status !== "done"
+        );
+        if (alreadyInjected) return prev;
+        const ts = Date.now();
+        const remLessons: Lesson[] = [
+          { id: `rem_${tag}_v_${ts}`,   title: `Reforço: Vídeo sobre ${tag.toUpperCase()}`,     status: "current", kind: "remediation", tag, remediation: { type: "video" } },
+          { id: `rem_${tag}_e_${ts+1}`, title: `Reforço: Exemplo de ${tag.toUpperCase()}`,       status: "locked",  kind: "remediation", tag, remediation: { type: "example" } },
+          { id: `rem_${tag}_a_${ts+2}`, title: `Reforço: Animação de ${tag.toUpperCase()}`,      status: "locked",  kind: "remediation", tag, remediation: { type: "animation" } },
+          { id: `rem_${tag}_x_${ts+3}`, title: `Reforço: Exercício sobre ${tag.toUpperCase()}`,  status: "locked",  kind: "remediation", tag, remediation: { type: "exercise" } },
+        ];
+        // Lock the original lesson until remediation is done
+        unit.lessons[idx].status = "locked";
+        // Insert remediation lessons right after the failed lesson
+        unit.lessons.splice(idx + 1, 0, ...remLessons);
+        return newUnits;
+      }
+      return prev;
+    });
+  };
+
+  return { units, completeLesson, setUnits, injectRemediation };
+}
+
+/* ---------- Error tracker hook ---------- */
+
+function useErrorTracker() {
+  const [errors, setErrors] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("canarinho_errors");
+      if (saved) setErrors(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, []);
+
+  const trackError = (tag: string): number => {
+    const next = (errors[tag] || 0) + 1;
+    const updated = { ...errors, [tag]: next };
+    setErrors(updated);
+    localStorage.setItem("canarinho_errors", JSON.stringify(updated));
+    return next;
+  };
+
+  const resetError = (tag: string) => {
+    const updated = { ...errors, [tag]: 0 };
+    setErrors(updated);
+    localStorage.setItem("canarinho_errors", JSON.stringify(updated));
+  };
+
+  return { trackError, resetError };
 }
 
 /* ---------- Helpers ---------- */
@@ -274,12 +336,24 @@ function UnitBanner({ unit, expanded, onToggle }: { unit: Unit; expanded?: boole
 /* ---------- Unit Section Wrapper ---------- */
 
 function UnitSection({ unit, ui, onPick }: { unit: Unit; ui: number; onPick: (l: Lesson) => void }) {
-  // O estado padrão é expandido. Podemos mudar para falso se preferir que inicie comprimido.
   const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`canarinho_unit_exp_${unit.id}`);
+    if (saved !== null) {
+      setExpanded(saved === "true");
+    }
+  }, [unit.id]);
+
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    localStorage.setItem(`canarinho_unit_exp_${unit.id}`, String(next));
+  };
 
   return (
     <section>
-      <UnitBanner unit={unit} expanded={expanded} onToggle={() => setExpanded(!expanded)} />
+      <UnitBanner unit={unit} expanded={expanded} onToggle={handleToggle} />
       {expanded && (
         <div className="relative mt-6 flex flex-col items-center gap-7 pb-2 animate-in fade-in slide-in-from-top-4 duration-300">
           {unit.lessons.map((lesson, i) => {
@@ -310,6 +384,7 @@ function UnitSection({ unit, ui, onPick }: { unit: Unit; ui: number; onPick: (l:
 
 function lessonIcon(kind: LessonKind, status: LessonStatus) {
   if (status === "locked") return <Lock className="h-8 w-8" />;
+  if (kind === "remediation") return <Sparkles className="h-8 w-8" />;
   if (kind === "checkpoint") return <Key className="h-8 w-8" />;
   if (kind === "trophy") return <Trophy className="h-8 w-8" />;
   if (kind === "practice") return <MapPin className="h-8 w-8" />;
@@ -335,24 +410,35 @@ function LessonNode({
   const isLocked = lesson.status === "locked";
   const isCurrent = lesson.status === "current";
 
-  const baseColor = isDone
-    ? "bg-primary"
-    : isLocked
-      ? "bg-muted"
-      : t.bg;
-  const shadowColor = isDone
-    ? "var(--color-primary-shadow)"
-    : isLocked
-      ? "oklch(0.82 0.02 110)"
-      : unit.color === "accent"
-        ? "var(--color-accent-shadow)"
-        : unit.color === "earth"
-          ? "oklch(0.4 0.06 60)"
-          : "var(--color-primary-shadow)";
+  const isRemediation = lesson.kind === "remediation";
+
+  const baseColor = isRemediation && !isDone
+    ? "bg-amber-400"
+    : isDone
+      ? "bg-primary"
+      : isLocked
+        ? "bg-muted"
+        : t.bg;
+  const shadowColor = isRemediation && !isDone
+    ? "#92400e"
+    : isDone
+      ? "var(--color-primary-shadow)"
+      : isLocked
+        ? "oklch(0.82 0.02 110)"
+        : unit.color === "accent"
+          ? "var(--color-accent-shadow)"
+          : unit.color === "earth"
+            ? "oklch(0.4 0.06 60)"
+            : "var(--color-primary-shadow)";
 
   return (
     <div className="relative flex flex-col items-center" style={{ transform: `translateX(${offset}px)` }}>
-      {isCurrent && (
+      {isRemediation && isCurrent && (
+        <div className="mb-2 rounded-xl border-2 border-amber-600 bg-amber-50 px-3 py-1.5 shadow-[0_3px_0_0_#92400e]">
+          <p className="text-[0.65rem] font-black uppercase tracking-widest text-amber-700">Reforço</p>
+        </div>
+      )}
+      {!isRemediation && isCurrent && (
         <div className="mb-2 rounded-xl border-2 border-accent-shadow bg-white px-3 py-1.5 shadow-[0_3px_0_0_var(--color-accent-shadow)]">
           <p className="text-[0.65rem] font-black uppercase tracking-widest text-accent-shadow">Comece</p>
         </div>
@@ -584,7 +670,7 @@ const QUESTIONS: Record<string, { prompt: string; sicarHint: string; options: st
   },
 };
 
-function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose: () => void; onComplete: () => void }) {
+function LessonSheet({ lesson, onClose, onComplete, onOpenAssistant, onError }: { lesson: Lesson; onClose: () => void; onComplete: () => void; onOpenAssistant: () => void; onError?: (tag: string) => void }) {
   const q = QUESTIONS.default;
   const [picked, setPicked] = useState<number | null>(null);
   const [checked, setChecked] = useState(false);
@@ -666,13 +752,21 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
                       Continuar
                     </button>
                   ) : (
-                    <button
-                      onClick={() => setMapDone(null)}
-                      className="mt-2 w-full rounded-2xl bg-heart py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform"
-                      style={{ boxShadow: "0 4px 0 0 #ea2b2b" }}
-                    >
-                      Tentar Novamente
-                    </button>
+                    <>
+                      <button
+                        onClick={onOpenAssistant}
+                        className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-border bg-muted/20 py-3 text-xs font-black uppercase tracking-wider text-muted-foreground transition-colors active:scale-[0.98]"
+                      >
+                        Ficou com dúvida? Pergunte ao Canarinho
+                      </button>
+                      <button
+                        onClick={() => setMapDone(null)}
+                        className="mt-2 w-full rounded-2xl bg-heart py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform"
+                        style={{ boxShadow: "0 4px 0 0 #ea2b2b" }}
+                      >
+                        Tentar Novamente
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -765,7 +859,14 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
         {/* Sticky action area */}
         <div className="shrink-0 border-t border-border/40 bg-background px-5 py-4">
           <button
-            onClick={() => picked !== null && setChecked(true)}
+            onClick={() => {
+              if (picked === null) return;
+              const isCorrect = picked === q.correct;
+              setChecked(true);
+              if (!isCorrect && lesson.tag) {
+                onError?.(lesson.tag);
+              }
+            }}
             disabled={picked === null || checked}
             className={`w-full rounded-xl py-3.5 text-sm font-black uppercase tracking-wider transition ${
               picked === null
@@ -802,6 +903,14 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
                       : "No SICAR, é Cadastrar > Imóvel Rural. Dica: é por essa aba que você inicia todo o desenho do imóvel."}
                   </p>
                 </div>
+                {!correct && (
+                  <button
+                    onClick={onOpenAssistant}
+                    className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-border bg-muted/20 py-3 text-xs font-black uppercase tracking-wider text-muted-foreground transition-colors active:scale-[0.98]"
+                  >
+                    Ficou com dúvida? Pergunte ao Canarinho
+                  </button>
+                )}
                 <button
                   onClick={
                     correct
@@ -811,7 +920,7 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
                           setPicked(null);
                         }
                   }
-                  className={`mt-4 w-full rounded-2xl py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform ${
+                  className={`mt-3 w-full rounded-2xl py-3.5 text-lg font-black uppercase tracking-wider text-white active:scale-[0.98] transition-transform ${
                     correct ? "bg-primary" : "bg-heart"
                   }`}
                   style={{
@@ -834,7 +943,10 @@ function LessonSheet({ lesson, onClose, onComplete }: { lesson: Lesson; onClose:
 function App() {
   const [tab, setTab] = useState("trail");
   const [open, setOpen] = useState<Lesson | null>(null);
-  const { units, completeLesson, setUnits } = useUnits();
+  const [isAssistantOpen, setAssistantOpen] = useState(false);
+  const [adaptiveModal, setAdaptiveModal] = useState<{ tag: string; lessonId: string } | null>(null);
+  const { units, completeLesson, setUnits, injectRemediation } = useUnits();
+  const { trackError, resetError } = useErrorTracker();
 
   const totalDone = useMemo(
     () => units.flatMap((u) => u.lessons).filter((l) => l.status === "done").length,
@@ -913,7 +1025,102 @@ function App() {
         Resetar Progresso
       </button>
 
-      {open && <LessonSheet lesson={open} onClose={() => setOpen(null)} onComplete={() => { completeLesson(open.id); setOpen(null); }} />}
+      {/* Floating Assistant Button */}
+      <button
+        onClick={() => setAssistantOpen(true)}
+        className="fixed bottom-20 right-5 z-40 md:bottom-8 md:right-8 flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg hover:bg-primary/90 active:scale-95 transition-transform"
+      >
+        <img src={canarinho} alt="Ajuda" className="h-8 w-8 drop-shadow-sm" />
+      </button>
+
+      {/* Main lesson sheet (MCQ or map) */}
+      {open && open.kind !== "remediation" && (
+        <LessonSheet
+          lesson={open}
+          onClose={() => setOpen(null)}
+          onComplete={() => {
+            resetError(open.tag || "geral");
+            completeLesson(open.id);
+            setOpen(null);
+          }}
+          onOpenAssistant={() => {
+            setOpen(null);
+            setAssistantOpen(true);
+          }}
+          onError={(tag) => {
+            const count = trackError(tag);
+            if (count >= 3) {
+              setOpen(null);
+              setAdaptiveModal({ tag, lessonId: open.id });
+            }
+          }}
+        />
+      )}
+
+      {/* Remediation sheet */}
+      {open && open.kind === "remediation" && (
+        <RemediationSheet
+          lesson={open}
+          onClose={() => setOpen(null)}
+          onComplete={() => {
+            completeLesson(open.id);
+            setOpen(null);
+          }}
+        />
+      )}
+
+      {/* Adaptive trail modal */}
+      {adaptiveModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-foreground/60 p-6 animate-in fade-in duration-300">
+          <div className="w-full max-w-sm overflow-hidden rounded-3xl bg-white shadow-2xl">
+            {/* Gradient header */}
+            <div className="bg-gradient-to-br from-amber-400 to-amber-600 px-6 py-5 text-center">
+              <img
+                src={canarinho}
+                alt="Canarinho"
+                className="mx-auto h-20 w-20 drop-shadow-lg animate-bounce"
+              />
+            </div>
+            <div className="px-6 py-5 text-center flex flex-col gap-4">
+              <div>
+                <p className="text-[0.65rem] font-black uppercase tracking-widest text-amber-600">
+                  Trilha Adaptativa Ativada!
+                </p>
+                <h3 className="mt-1 text-xl font-black text-foreground">
+                  Notei que você teve dificuldade!
+                </h3>
+                <p className="mt-2 text-sm font-semibold text-muted-foreground">
+                  Preparei <span className="font-black text-amber-600">4 lições especiais</span> sobre{" "}
+                  <span className="font-black text-foreground">{adaptiveModal.tag.toUpperCase()}</span> para te ajudar antes de continuar.
+                </p>
+              </div>
+              {/* Mini trail preview */}
+              <div className="flex items-center justify-center gap-2">
+                {(["Vídeo", "Exemplo", "Animação", "Exercício"] as const).map((type, i) => (
+                  <div key={type} className="flex flex-col items-center gap-1">
+                    <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center text-sm">
+                      {["🎬", "📖", "✨", "📝"][i]}
+                    </div>
+                    <span className="text-[0.55rem] font-black text-amber-700">{type}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  injectRemediation(adaptiveModal.tag, adaptiveModal.lessonId);
+                  setAdaptiveModal(null);
+                }}
+                className="w-full rounded-2xl bg-amber-500 py-3.5 text-sm font-black uppercase tracking-wider text-white"
+                style={{ boxShadow: "0 4px 0 0 #92400e" }}
+              >
+                Vamos lá! →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAssistantOpen && <AssistantChat onClose={() => setAssistantOpen(false)} />}
     </div>
   );
 }
